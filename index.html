@@ -1,0 +1,943 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>mini discord (peerjs)</title>
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<style>
+:root{color-scheme:dark}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{background:#000;color:#fff;overflow:hidden;font:14px/1.4 ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+button{font:inherit;color:#fff;background:none;border:0;cursor:pointer}
+input{font:inherit;color:#fff;background:none;border:0;outline:0}
+.hidden{display:none!important}
+.screen{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;z-index:200}
+.brand{font-size:11px;letter-spacing:.35em;text-transform:uppercase;opacity:.45}
+.screen input{width:280px;padding:9px 2px;text-align:center;border-bottom:1px solid rgba(255,255,255,.15)}
+.screen input::placeholder{color:rgba(255,255,255,.28)}
+.btns{display:flex;gap:28px;margin-top:8px}
+.btns button{opacity:.6;padding:6px 4px;transition:opacity .15s}
+.btns button:hover{opacity:1;text-decoration:underline}
+.err{font-size:12px;color:#ff6b6b;height:14px}
+.status{font-size:12px;opacity:.5;min-height:16px;letter-spacing:.05em}
+#users{position:fixed;top:12px;left:16px;z-index:120;font-size:11px;line-height:1.9;user-select:none}
+#users .u{opacity:.5;white-space:nowrap;transition:opacity .12s}
+#users .u:hover{opacity:.85}
+#users .u.speaking{opacity:1;font-weight:700}
+#users .u.muted .n{text-decoration:line-through}
+#users .tag{opacity:.4;font-size:10px}
+#roomCode{position:fixed;top:12px;right:16px;z-index:120;font-size:11px;opacity:.35;letter-spacing:.08em;cursor:pointer;user-select:none}
+#roomCode:hover{opacity:.8}
+#bar{position:fixed;left:0;right:0;bottom:0;z-index:130;display:flex;justify-content:center;gap:6px;padding:14px;pointer-events:none}
+#bar button{pointer-events:auto;padding:9px 15px;border-radius:8px;font-size:13px;opacity:.5;transition:opacity .15s,background .15s}
+#bar button:hover{opacity:1;background:rgba(255,255,255,.06)}
+#bar button.off{opacity:.22}
+#bar button.on{opacity:1}
+#settings{position:fixed;right:16px;bottom:64px;width:270px;z-index:140;background:rgba(0,0,0,.94);padding:14px 16px;border-radius:10px;font-size:12px;display:flex;flex-direction:column;gap:11px}
+#settings .row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+#settings .row label{opacity:.7;flex:1}
+#settings input[type=range]{width:110px;accent-color:#fff}
+#settings input[type=checkbox]{accent-color:#fff;width:14px;height:14px}
+#settings .val{width:36px;text-align:right;opacity:.5;font-variant-numeric:tabular-nums}
+#ctxMenu{position:fixed;z-index:300;background:rgba(0,0,0,.96);padding:12px 14px;border-radius:10px;font-size:12px;min-width:200px;display:flex;flex-direction:column;gap:10px;box-shadow:0 8px 40px rgba(0,0,0,.9)}
+#ctxMenu .t{opacity:.5;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#ctxMenu .r{display:flex;align-items:center;gap:10px}
+#ctxMenu input[type=range]{flex:1;accent-color:#fff}
+#ctxMenu .v{width:40px;text-align:right;opacity:.6;font-variant-numeric:tabular-nums}
+#ctxMenu .act{opacity:.6;text-align:left;padding:2px 0}
+#ctxMenu .act:hover{opacity:1;text-decoration:underline}
+#screenLayer{position:fixed;inset:0;z-index:60;pointer-events:none}
+.share{position:fixed;pointer-events:auto;display:flex;flex-direction:column;background:#050505;border-radius:10px;overflow:hidden;min-width:240px;min-height:150px;box-shadow:0 16px 60px rgba(0,0,0,.85)}
+.share.max{inset:0!important;width:auto!important;height:auto!important;border-radius:0;z-index:65}
+.share video{flex:1;min-height:0;width:100%;height:100%;object-fit:contain;background:#000;display:block}
+.share .head{display:flex;align-items:center;gap:8px;padding:5px 10px;font-size:11px;opacity:.45;transition:opacity .15s;cursor:grab;user-select:none;flex:0 0 auto}
+.share .head:hover{opacity:1}
+.share.max .head{position:absolute;left:0;right:0;top:0;background:linear-gradient(#000c,#0000);opacity:0}
+.share.max:hover .head{opacity:1}
+.share .head .sp{flex:1}
+.share .head button{font-size:13px;opacity:.7;padding:0 3px}
+.share .head button:hover{opacity:1}
+.share .rz{position:absolute;right:0;bottom:0;width:16px;height:16px;cursor:nwse-resize;z-index:3}
+.share.max .rz{display:none}
+</style>
+</head>
+<body>
+
+<div id="mainMenu" class="screen">
+  <div class="brand">mini discord · peerjs</div>
+  <input id="nickInput" placeholder="твой ник" maxlength="18" autocomplete="off">
+  <div class="btns">
+    <button id="btnCreate">создать комнату</button>
+    <button id="btnJoin">присоединиться</button>
+  </div>
+  <div id="err" class="err"></div>
+  <div id="secureWarn" class="err" style="color:#ffaa44"></div>
+</div>
+
+<div id="joinMenu" class="screen hidden">
+  <div class="brand">присоединиться</div>
+  <input id="codeInput" placeholder="код комнаты" maxlength="8" autocomplete="off">
+  <div class="btns">
+    <button id="btnJoinConfirm">войти</button>
+    <button id="btnBack">назад</button>
+  </div>
+  <div id="joinErr" class="err"></div>
+</div>
+
+<div id="roomView" class="hidden">
+  <div id="users"></div>
+  <div id="roomCode" title="нажми чтобы скопировать"></div>
+  <div id="screenLayer"></div>
+  <div id="bar">
+    <button id="btnMic">🎤 микрофон</button>
+    <button id="btnSnd">🔊 звук</button>
+    <button id="btnScr">🖥 демонстрация</button>
+    <button id="btnCfg">⚙ настройки</button>
+  </div>
+  <div id="settings" class="hidden">
+    <div class="row"><label>общая громкость</label><input id="sVol" type="range" min="0" max="100" value="100"><span class="val" id="sVolV">100</span></div>
+    <div class="row"><label>шумоподавление</label><input id="sNs" type="checkbox" checked></div>
+    <div class="row"><label>эхоподавление</label><input id="sEc" type="checkbox" checked></div>
+    <div class="row"><label>авто-усиление</label><input id="sAg" type="checkbox" checked></div>
+    <div class="row"><label>чувствительность</label><input id="sSn" type="range" min="1" max="60" value="15"><span class="val" id="sSnV">15</span></div>
+  </div>
+  <div id="ctxMenu" class="hidden"></div>
+</div>
+
+<script>
+(function(){
+'use strict';
+
+/* ============================================================
+   УТИЛИТЫ
+   ============================================================ */
+const $  = (s, r=document) => r.querySelector(s);
+const uid = () => Math.random().toString(36).slice(2, 9);
+const genCode = () => {
+  const a = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let s = '';
+  for (let i = 0; i < 6; i++) s += a[Math.floor(Math.random() * a.length)];
+  return s;
+};
+
+/* ============================================================
+   СОСТОЯНИЕ
+   ============================================================ */
+const state = {
+  id: uid(),
+  name: '',
+  code: '',
+  host: false,
+  micOn: false,
+  deafened: false,
+  localStream: null,
+  screenStream: null,
+  micAnalyser: null,
+  peer: null,
+};
+
+const settings = { volume: 1, noise: true, echo: true, agc: true, sens: 0.02 };
+const peers = new Map();      // peerId -> { name, dataConn, micCall, screenCall, micGain, screenGain, micAnalyser, micVolume, screenVolume, muted, host, micStream }
+const speaking = new Set();
+
+let ac = null, masterGain = null;
+
+/* ============================================================
+   ICE (STUN + бесплатный TURN от openrelay)
+   ============================================================ */
+const ICE = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:global.stun.twilio.com:3478' },
+    { urls: 'turn:openrelay.metered.ca:80',  username: 'openrelayproject', credential: 'openrelayproject' },
+    { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+    { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+  ],
+};
+
+/* ============================================================
+   АУДИО
+   ============================================================ */
+function getAC() {
+  if (!ac) {
+    ac = new (window.AudioContext || window.webkitAudioContext)();
+    masterGain = ac.createGain();
+    masterGain.gain.value = state.deafened ? 0 : settings.volume;
+    masterGain.connect(ac.destination);
+  }
+  if (ac.state === 'suspended') ac.resume().catch(()=>{});
+  return ac;
+}
+function analyserFor(stream) {
+  const ctx = getAC();
+  const src = ctx.createMediaStreamSource(stream);
+  const an = ctx.createAnalyser();
+  an.fftSize = 512;
+  src.connect(an);
+  return an;
+}
+const rmsBuf = new Uint8Array(512);
+function rms(an) {
+  an.getByteTimeDomainData(rmsBuf);
+  let s = 0;
+  for (let i = 0; i < rmsBuf.length; i++) { const v = (rmsBuf[i]-128)/128; s += v*v; }
+  return Math.sqrt(s / rmsBuf.length);
+}
+
+/* ============================================================
+   РЕГИСТРАЦИЯ ПИРА
+   ============================================================ */
+function registerPeer(peerId, name) {
+  if (peers.has(peerId)) {
+    const p = peers.get(peerId);
+    if (name) p.name = name;
+    return p;
+  }
+  const p = {
+    id: peerId,
+    name: name || '?',
+    dataConn: null,
+    micCall: null,
+    screenCall: null,
+    micGain: null,
+    screenGain: null,
+    micAnalyser: null,
+    micVolume: 1,
+    screenVolume: 1,
+    muted: false,
+    host: false,
+    micStream: null,
+  };
+  peers.set(peerId, p);
+  renderUsers();
+  return p;
+}
+
+function removePeer(peerId) {
+  const p = peers.get(peerId);
+  if (!p) return;
+  try { p.dataConn && p.dataConn.close(); } catch(e){}
+  try { p.micCall && p.micCall.close(); } catch(e){}
+  try { p.screenCall && p.screenCall.close(); } catch(e){}
+  try { p.micGain && p.micGain.disconnect(); } catch(e){}
+  try { p.screenGain && p.screenGain.disconnect(); } catch(e){}
+  peers.delete(peerId);
+  speaking.delete(peerId);
+  removeScreenWindow(peerId);
+  renderUsers();
+}
+
+/* ============================================================
+   АУДИО-ПРИЁМНИКИ
+   ============================================================ */
+function attachMicAudio(peerId, stream) {
+  const p = peers.get(peerId);
+  if (!p || p.micGain) return;
+  const ctx = getAC();
+  let src;
+  try { src = ctx.createMediaStreamSource(stream); } catch(e){ return; }
+  const gain = ctx.createGain();
+  gain.gain.value = p.micVolume;
+  src.connect(gain);
+  gain.connect(masterGain);
+  const an = ctx.createAnalyser();
+  an.fftSize = 512;
+  src.connect(an);
+  p.micGain = gain;
+  p.micAnalyser = an;
+  p.micStream = stream;
+}
+
+function attachScreenAudio(peerId, stream) {
+  const p = peers.get(peerId);
+  if (!p || p.screenGain) return;
+  if (!stream.getAudioTracks().length) return;
+  const ctx = getAC();
+  let src;
+  try { src = ctx.createMediaStreamSource(stream); } catch(e){ return; }
+  const gain = ctx.createGain();
+  gain.gain.value = p.screenVolume;
+  src.connect(gain);
+  gain.connect(masterGain);
+  p.screenGain = gain;
+}
+
+function attachScreenVideo(peerId, stream) {
+  const p = peers.get(peerId);
+  if (!p) return;
+  let win = $(`.share[data-share="${peerId}"]`);
+  if (!win) win = createShareWindow(peerId, p.name + ' · экран', stream, false);
+  const v = win.querySelector('video');
+  if (v.srcObject !== stream) {
+    v.srcObject = stream;
+    v.play().catch(()=>{});
+  }
+}
+
+/* ============================================================
+   ОБРАБОТКА СООБЩЕНИЙ ПО DATA CHANNEL
+   ============================================================ */
+function onPeerMessage(peerId, msg) {
+  const p = peers.get(peerId);
+  if (!p || !msg) return;
+  switch (msg.type) {
+    case 'state':
+      p.muted = !msg.micOn;
+      renderUsers();
+      break;
+    case 'screen-stop':
+      removeScreenWindow(peerId);
+      if (p.screenGain) { try { p.screenGain.disconnect(); } catch(e){} p.screenGain = null; }
+      p.screenCall = null;
+      break;
+  }
+}
+
+/* ============================================================
+   ОБРАБОТКА ВХОДЯЩИХ СОЕДИНЕНИЙ/ЗВОНКОВ
+   (общие для всех — хост и клиенты)
+   ============================================================ */
+function wireCommonHandlers(peer) {
+
+  peer.on('connection', (conn) => {
+    const peerId = conn.peer;
+    const name = conn.metadata && conn.metadata.name;
+
+    // Если это хост — рассылает room-info и уведомляет остальных
+    if (state.host) {
+      const self = { id: peer.id, name: state.name };
+      const others = [];
+      for (const p of peers.values()) others.push({ id: p.id, name: p.name });
+
+      conn.on('open', () => {
+        conn.send({ type: 'room-info', host: self, peers: others });
+      });
+
+      for (const p of peers.values()) {
+        if (p.dataConn && p.dataConn.open) {
+          try { p.dataConn.send({ type: 'peer-joined', id: peerId, name: name || '?' }); } catch(e){}
+        }
+      }
+    }
+
+    const p = registerPeer(peerId, name);
+    p.dataConn = conn;
+    p.host = false;
+    conn.on('data', (m) => onPeerMessage(peerId, m));
+    conn.on('close', () => removePeer(peerId));
+    conn.on('error', (e) => console.warn('data err', e));
+    renderUsers();
+  });
+
+  peer.on('call', (call) => {
+    const peerId = call.peer;
+    const type = (call.metadata && call.metadata.type) || 'mic';
+    const name = call.metadata && call.metadata.name;
+
+    const p = registerPeer(peerId, name);
+
+    let answerStream = null;
+    if (type === 'mic' && state.localStream) answerStream = state.localStream;
+    else if (type === 'screen' && state.screenStream) answerStream = state.screenStream;
+
+    try { call.answer(answerStream || new MediaStream()); } catch(e){ console.warn(e); }
+
+    call.on('stream', (remote) => {
+      if (type === 'screen') {
+        attachScreenVideo(peerId, remote);
+        attachScreenAudio(peerId, remote);
+      } else {
+        attachMicAudio(peerId, remote);
+      }
+    });
+    call.on('close', () => {});
+    call.on('error', (e) => console.warn('call err', e));
+  });
+}
+
+/* ============================================================
+   СОЗДАНИЕ КОМНАТЫ (хост)
+   ============================================================ */
+async function createRoom() {
+  state.name = $('#nickInput').value.trim() || 'гость';
+  state.host = true;
+  state.code = genCode();
+
+  getAC();
+  await startMic();
+
+  state.peer = new Peer('md-' + state.code, { config: ICE });
+
+  await new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error('сигнальный сервер не ответил')), 15000);
+    state.peer.on('open', () => { clearTimeout(t); resolve(); });
+    state.peer.on('error', (err) => {
+      clearTimeout(t);
+      if (err.type === 'unavailable-id') reject(new Error('код комнаты занят, попробуй ещё раз'));
+      else reject(err);
+    });
+  });
+
+  wireCommonHandlers(state.peer);
+  enterRoomUI();
+}
+
+/* ============================================================
+   ПРИСОЕДИНЕНИЕ К КОМНАТЕ (клиент)
+   ============================================================ */
+async function joinRoom(code) {
+  state.name = $('#nickInput').value.trim() || 'гость';
+  state.host = false;
+  state.code = code;
+
+  getAC();
+  await startMic();
+
+  state.peer = new Peer({ config: ICE });
+  await new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error('сигнальный сервер не ответил')), 15000);
+    state.peer.on('open', () => { clearTimeout(t); resolve(); });
+    state.peer.on('error', reject);
+  });
+
+  wireCommonHandlers(state.peer);
+
+  // Подключаемся к хосту
+  const hostConn = state.peer.connect('md-' + code, { metadata: { name: state.name } });
+
+  await new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error('комната не найдена или хост оффлайн')), 15000);
+
+    hostConn.on('open', () => { /* ждём room-info */ });
+
+    hostConn.on('data', (msg) => {
+      if (msg.type === 'room-info') {
+        clearTimeout(t);
+        // регистрируем хоста
+        const hostPeer = registerPeer(msg.host.id, msg.host.name);
+        hostPeer.dataConn = hostConn;
+        hostPeer.host = true;
+        hostConn.on('data', (m) => onPeerMessage(msg.host.id, m));
+        hostConn.on('close', () => removePeer(msg.host.id));
+
+        // звоним хосту за микрофоном
+        if (state.localStream) {
+          const call = state.peer.call(msg.host.id, state.localStream, { metadata: { type: 'mic', name: state.name } });
+          call.on('stream', (remote) => attachMicAudio(msg.host.id, remote));
+          hostPeer.micCall = call;
+        }
+
+        // подключаемся к остальным и звоним им
+        for (const p of msg.peers) {
+          if (p.id === state.peer.id) continue;
+          const dc = state.peer.connect(p.id, { metadata: { name: state.name } });
+          const peer = registerPeer(p.id, p.name);
+          peer.dataConn = dc;
+          dc.on('data', (m) => onPeerMessage(p.id, m));
+          dc.on('close', () => removePeer(p.id));
+          if (state.localStream) {
+            const call = state.peer.call(p.id, state.localStream, { metadata: { type: 'mic', name: state.name } });
+            call.on('stream', (remote) => attachMicAudio(p.id, remote));
+            peer.micCall = call;
+          }
+        }
+
+        resolve();
+      }
+      if (msg.type === 'peer-joined') {
+        // кто-то присоединился после нас — он сам нам позвонит
+        registerPeer(msg.id, msg.name);
+        // на всякий случай откроем ему data-канал (на случай гонки)
+        if (!peers.get(msg.id).dataConn) {
+          const dc = state.peer.connect(msg.id, { metadata: { name: state.name } });
+          peers.get(msg.id).dataConn = dc;
+          dc.on('data', (m) => onPeerMessage(msg.id, m));
+          dc.on('close', () => removePeer(msg.id));
+        }
+      }
+    });
+
+    hostConn.on('error', reject);
+    hostConn.on('close', () => reject(new Error('хост закрыл соединение')));
+  });
+
+  enterRoomUI();
+}
+
+/* ============================================================
+   ВХОД В UI КОМНАТЫ
+   ============================================================ */
+function enterRoomUI() {
+  show('roomView');
+  const rc = $('#roomCode');
+  rc.textContent = 'комната ' + state.code + (state.host ? ' · хост' : '');
+  rc.onclick = () => {
+    navigator.clipboard && navigator.clipboard.writeText(state.code).catch(()=>{});
+    rc.textContent = 'скопировано';
+    setTimeout(() => { rc.textContent = 'комната ' + state.code + (state.host ? ' · хост' : ''); }, 900);
+  };
+  $('#btnMic').classList.toggle('on', state.micOn);
+  $('#btnMic').classList.toggle('off', !state.micOn);
+  renderUsers();
+  requestAnimationFrame(loop);
+}
+
+/* ============================================================
+   МИКРОФОН
+   ============================================================ */
+async function startMic() {
+  try {
+    const s = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        noiseSuppression: settings.noise,
+        echoCancellation: settings.echo,
+        autoGainControl: settings.agc,
+      },
+      video: false,
+    });
+    state.localStream = s;
+    state.micOn = true;
+    state.micAnalyser = analyserFor(s);
+    return true;
+  } catch (e) {
+    console.warn('mic unavailable', e);
+    state.micOn = false;
+    return false;
+  }
+}
+
+async function applyConstraints() {
+  const t = state.localStream && state.localStream.getAudioTracks()[0];
+  if (!t) return;
+  try {
+    await t.applyConstraints({
+      noiseSuppression: settings.noise,
+      echoCancellation: settings.echo,
+      autoGainControl: settings.agc,
+    });
+  } catch(e){}
+}
+
+/* ============================================================
+   ДЕМОНСТРАЦИЯ ЭКРАНА
+   ============================================================ */
+async function startScreen() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+    alert('браузер не поддерживает демонстрацию экрана');
+    return;
+  }
+  let s;
+  try {
+    s = await navigator.mediaDevices.getDisplayMedia({
+      video: { frameRate: 30 },
+      audio: true,
+    });
+  } catch(e){ return; }
+
+  state.screenStream = s;
+  createShareWindow('local', 'ты · экран', s, true);
+
+  // звоним всем пирам с экраном
+  for (const p of peers.values()) {
+    if (!p.dataConn) continue;
+    if (!p.dataConn.open) continue;
+    const call = state.peer.call(p.id, s, { metadata: { type: 'screen', name: state.name } });
+    p.screenCall = call;
+  }
+
+  s.getVideoTracks()[0].addEventListener('ended', stopScreen);
+  $('#btnScr').classList.add('on');
+}
+
+function stopScreen() {
+  if (!state.screenStream) return;
+  state.screenStream.getTracks().forEach(t => { try { t.stop(); } catch(e){} });
+  for (const p of peers.values()) {
+    if (p.screenCall) { try { p.screenCall.close(); } catch(e){} p.screenCall = null; }
+    if (p.dataConn && p.dataConn.open) {
+      try { p.dataConn.send({ type: 'screen-stop' }); } catch(e){}
+    }
+  }
+  state.screenStream = null;
+  removeScreenWindow('local');
+  $('#btnScr').classList.remove('on');
+}
+
+/* ============================================================
+   ОКНА ДЕМОНСТРАЦИИ
+   ============================================================ */
+function createShareWindow(id, title, stream, isLocal) {
+  const old = $(`.share[data-share="${id}"]`);
+  if (old) old.remove();
+
+  const win = document.createElement('div');
+  win.className = 'share max';
+  win.dataset.share = id;
+  win.innerHTML =
+    '<div class="head">' +
+      '<span class="ttl"></span>' +
+      '<span class="sp"></span>' +
+      '<button class="fs" title="окно / весь экран">⤢</button>' +
+      (isLocal ? '<button class="st" title="остановить">✕</button>' : '') +
+    '</div>' +
+    '<video autoplay playsinline muted></video>' +
+    '<div class="rz"></div>';
+  win.querySelector('.ttl').textContent = title;
+
+  const v = win.querySelector('video');
+  v.srcObject = stream;
+  v.play().catch(()=>{});
+
+  win.querySelector('.fs').onclick = (e) => {
+    e.stopPropagation();
+    const max = win.classList.toggle('max');
+    if (!max) {
+      win.style.left = '60px'; win.style.top = '60px';
+      win.style.width = '480px'; win.style.height = '290px';
+    }
+  };
+
+  if (isLocal) win.querySelector('.st').onclick = () => stopScreen();
+
+  win.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    openScreenMenu(e, id, isLocal);
+  });
+
+  makeDrag(win);
+  makeResize(win);
+  $('#screenLayer').appendChild(win);
+  return win;
+}
+
+function removeScreenWindow(id) {
+  const w = $(`.share[data-share="${id}"]`);
+  if (w) w.remove();
+}
+
+function makeDrag(win) {
+  const head = win.querySelector('.head');
+  let on = false, sx = 0, sy = 0, ox = 0, oy = 0;
+  head.addEventListener('mousedown', (e) => {
+    if (win.classList.contains('max') || e.target.closest('button')) return;
+    const r = win.getBoundingClientRect();
+    on = true; sx = e.clientX; sy = e.clientY; ox = r.left; oy = r.top;
+    e.preventDefault();
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (!on) return;
+    win.style.left = (ox + e.clientX - sx) + 'px';
+    win.style.top  = (oy + e.clientY - sy) + 'px';
+  });
+  window.addEventListener('mouseup', () => { on = false; });
+}
+
+function makeResize(win) {
+  const rz = win.querySelector('.rz');
+  let on = false, sx = 0, sy = 0, ow = 0, oh = 0;
+  rz.addEventListener('mousedown', (e) => {
+    if (win.classList.contains('max')) return;
+    const r = win.getBoundingClientRect();
+    on = true; sx = e.clientX; sy = e.clientY; ow = r.width; oh = r.height;
+    e.preventDefault(); e.stopPropagation();
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (!on) return;
+    win.style.width  = Math.max(240, ow + e.clientX - sx) + 'px';
+    win.style.height = Math.max(150, oh + e.clientY - sy) + 'px';
+  });
+  window.addEventListener('mouseup', () => { on = false; });
+}
+
+/* ============================================================
+   КОНТЕКСТНЫЕ МЕНЮ
+   ============================================================ */
+function openUserMenu(e, id) {
+  const p = peers.get(id);
+  if (!p) return;
+  const menu = $('#ctxMenu');
+  menu.innerHTML = '';
+  menu.classList.remove('hidden');
+
+  const title = document.createElement('div');
+  title.className = 't';
+  title.textContent = 'микрофон · ' + p.name;
+  menu.appendChild(title);
+
+  const row = document.createElement('div');
+  row.className = 'r';
+  const sl = document.createElement('input');
+  sl.type = 'range'; sl.min = 0; sl.max = 200; sl.value = Math.round(p.micVolume * 100);
+  const val = document.createElement('span');
+  val.className = 'v';
+  val.textContent = sl.value + '%';
+  sl.oninput = () => {
+    p.micVolume = sl.value / 100;
+    if (p.micGain) p.micGain.gain.value = p.micVolume;
+    val.textContent = sl.value + '%';
+  };
+  row.append(sl, val);
+  menu.appendChild(row);
+  placeMenu(menu, e.clientX, e.clientY);
+}
+
+function openScreenMenu(e, id, isLocal) {
+  const menu = $('#ctxMenu');
+  menu.innerHTML = '';
+  menu.classList.remove('hidden');
+
+  const p = isLocal ? null : peers.get(id);
+  const title = document.createElement('div');
+  title.className = 't';
+  title.textContent = 'экран · ' + (isLocal ? 'ты' : (p ? p.name : '?'));
+  menu.appendChild(title);
+
+  if (!isLocal && p) {
+    const row = document.createElement('div');
+    row.className = 'r';
+    const sl = document.createElement('input');
+    sl.type = 'range'; sl.min = 0; sl.max = 200; sl.value = Math.round(p.screenVolume * 100);
+    const val = document.createElement('span');
+    val.className = 'v';
+    val.textContent = sl.value + '%';
+    sl.oninput = () => {
+      p.screenVolume = sl.value / 100;
+      if (p.screenGain) p.screenGain.gain.value = p.screenVolume;
+      val.textContent = sl.value + '%';
+    };
+    row.append(sl, val);
+    menu.appendChild(row);
+  }
+
+  const fs = document.createElement('button');
+  fs.className = 'act';
+  fs.textContent = 'свернуть / развернуть';
+  fs.onclick = () => {
+    const w = $(`.share[data-share="${id}"] .fs`);
+    if (w) w.click();
+    closeMenu();
+  };
+  menu.appendChild(fs);
+
+  if (isLocal) {
+    const st = document.createElement('button');
+    st.className = 'act';
+    st.textContent = 'остановить';
+    st.onclick = () => { stopScreen(); closeMenu(); };
+    menu.appendChild(st);
+  }
+  placeMenu(menu, e.clientX, e.clientY);
+}
+
+function placeMenu(menu, x, y) {
+  menu.style.left = '0px'; menu.style.top = '0px';
+  const r = menu.getBoundingClientRect();
+  menu.style.left = Math.min(x, innerWidth  - r.width  - 10) + 'px';
+  menu.style.top  = Math.min(y, innerHeight - r.height - 10) + 'px';
+}
+
+function closeMenu() {
+  const m = $('#ctxMenu');
+  m.classList.add('hidden');
+  m.innerHTML = '';
+}
+
+document.addEventListener('mousedown', (e) => {
+  const m = $('#ctxMenu');
+  if (!m.classList.contains('hidden') && !m.contains(e.target)) closeMenu();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    closeMenu();
+    $('#settings').classList.add('hidden');
+    $('#btnCfg').classList.remove('on');
+  }
+});
+
+/* ============================================================
+   ОТРИСОВКА СПИСКА ПОЛЬЗОВАТЕЛЕЙ
+   ============================================================ */
+function renderUsers() {
+  const box = $('#users');
+  const list = [{
+    id: state.id, name: state.name, me: true,
+    micOn: state.micOn, host: state.host
+  }];
+  for (const p of peers.values()) {
+    list.push({ id: p.id, name: p.name, micOn: !p.muted, host: p.host });
+  }
+
+  box.innerHTML = '';
+  for (const u of list) {
+    const el = document.createElement('div');
+    el.className = 'u' + (u.micOn ? '' : ' muted');
+    el.dataset.uid = u.id;
+    if (speaking.has(u.id)) el.classList.add('speaking');
+
+    const n = document.createElement('span');
+    n.className = 'n';
+    n.textContent = u.name;
+    el.appendChild(n);
+
+    if (u.me)   el.insertAdjacentHTML('beforeend', ' <span class="tag">ты</span>');
+    if (u.host) el.insertAdjacentHTML('beforeend', ' <span class="tag">хост</span>');
+
+    if (!u.me) {
+      el.addEventListener('contextmenu', (ev) => {
+        ev.preventDefault();
+        openUserMenu(ev, u.id);
+      });
+    }
+    box.appendChild(el);
+  }
+}
+
+function setSpeaking(id, v) {
+  if (v) speaking.add(id); else speaking.delete(id);
+  const el = $(`#users .u[data-uid="${id}"]`);
+  if (el) el.classList.toggle('speaking', v);
+}
+
+/* ============================================================
+   ЦИКЛ ИНДИКАЦИИ РЕЧИ
+   ============================================================ */
+function loop() {
+  const thr = settings.sens;
+  if (state.micAnalyser && state.micOn) setSpeaking(state.id, rms(state.micAnalyser) > thr);
+  else setSpeaking(state.id, false);
+
+  for (const p of peers.values()) {
+    if (p.micAnalyser) setSpeaking(p.id, rms(p.micAnalyser) > thr);
+  }
+  requestAnimationFrame(loop);
+}
+
+/* ============================================================
+   ЭКРАНЫ
+   ============================================================ */
+function show(id) {
+  ['mainMenu', 'joinMenu', 'roomView'].forEach(s => {
+    $('#' + s).classList.toggle('hidden', s !== id);
+  });
+}
+
+/* ============================================================
+   КНОПКИ / СОБЫТИЯ
+   ============================================================ */
+$('#btnCreate').onclick = async () => {
+  const nick = $('#nickInput').value.trim();
+  if (!nick) { $('#err').textContent = 'введи ник'; return; }
+  $('#err').textContent = '';
+  try { await createRoom(); }
+  catch (e) { $('#err').textContent = e.message || 'ошибка создания комнаты'; }
+};
+
+$('#btnJoin').onclick = () => {
+  const nick = $('#nickInput').value.trim();
+  if (!nick) { $('#err').textContent = 'введи ник'; return; }
+  $('#err').textContent = '';
+  show('joinMenu');
+  $('#codeInput').value = '';
+  $('#joinErr').textContent = '';
+  setTimeout(() => $('#codeInput').focus(), 50);
+};
+
+$('#btnBack').onclick = () => show('mainMenu');
+
+$('#btnJoinConfirm').onclick = async () => {
+  const code = $('#codeInput').value.trim().toUpperCase();
+  if (code.length < 3) { $('#joinErr').textContent = 'введи код комнаты'; return; }
+  $('#joinErr').textContent = 'подключение...';
+  try {
+    await joinRoom(code);
+    $('#joinErr').textContent = '';
+  } catch (e) {
+    $('#joinErr').textContent = e.message || 'не удалось подключиться';
+  }
+};
+
+$('#codeInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') $('#btnJoinConfirm').click();
+});
+$('#nickInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') $('#btnCreate').click();
+});
+
+$('#btnMic').onclick = async () => {
+  if (!state.localStream) {
+    const ok = await startMic();
+    if (!ok) return;
+  }
+  state.micOn = !state.micOn;
+  state.localStream.getAudioTracks().forEach(t => { t.enabled = state.micOn; });
+  $('#btnMic').classList.toggle('off', !state.micOn);
+  $('#btnMic').classList.toggle('on', state.micOn);
+
+  // сообщаем всем
+  for (const p of peers.values()) {
+    if (p.dataConn && p.dataConn.open) {
+      try { p.dataConn.send({ type: 'state', micOn: state.micOn }); } catch(e){}
+    }
+  }
+  renderUsers();
+};
+
+$('#btnSnd').onclick = () => {
+  state.deafened = !state.deafened;
+  if (masterGain) masterGain.gain.value = state.deafened ? 0 : settings.volume;
+  $('#btnSnd').classList.toggle('off', state.deafened);
+  $('#btnSnd').classList.toggle('on', !state.deafened);
+};
+
+$('#btnScr').onclick = () => {
+  if (state.screenStream) stopScreen();
+  else startScreen();
+};
+
+$('#btnCfg').onclick = () => {
+  const s = $('#settings');
+  s.classList.toggle('hidden');
+  $('#btnCfg').classList.toggle('on', !s.classList.contains('hidden'));
+};
+
+$('#sVol').oninput = (e) => {
+  settings.volume = e.target.value / 100;
+  $('#sVolV').textContent = e.target.value;
+  if (masterGain) masterGain.gain.value = state.deafened ? 0 : settings.volume;
+};
+$('#sSn').oninput = (e) => {
+  settings.sens = e.target.value / 1000;
+  $('#sSnV').textContent = e.target.value;
+};
+$('#sNs').onchange = (e) => { settings.noise = e.target.checked; applyConstraints(); };
+$('#sEc').onchange = (e) => { settings.echo  = e.target.checked; applyConstraints(); };
+$('#sAg').onchange = (e) => { settings.agc   = e.target.checked; applyConstraints(); };
+
+/* ============================================================
+   ВЫХОД
+   ============================================================ */
+window.addEventListener('beforeunload', () => {
+  try { if (state.peer) state.peer.destroy(); } catch(e){}
+  try { if (state.localStream)  state.localStream.getTracks().forEach(t => t.stop()); } catch(e){}
+  try { if (state.screenStream) state.screenStream.getTracks().forEach(t => t.stop()); } catch(e){}
+});
+
+/* ============================================================
+   ПРОВЕРКА HTTPS
+   ============================================================ */
+if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+  $('#secureWarn').textContent =
+    'микрофон и экран требуют HTTPS или localhost. Открой через http://localhost или задеплой на GitHub Pages / Netlify.';
+}
+
+/* ============================================================
+   СТАРТ
+   ============================================================ */
+show('mainMenu');
+
+})();
+</script>
+</body>
+</html>
